@@ -23,9 +23,9 @@
 //!   **local effect** — parse the tool response and write the marker at
 //!   the git root. The LLM only ever chose; the write is deterministic.
 
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use anyhow::Result;
 use serde_json::{Value, json};
@@ -238,7 +238,6 @@ fn maybe_self_update(auto: bool) {
     let Ok(exe) = std::env::current_exe() else {
         return;
     };
-    use std::process::Stdio;
     let mut update = Command::new(exe);
     update
         .arg("update")
@@ -536,7 +535,20 @@ pub async fn poll(kind: Kind) -> Result<()> {
 
 // ─── session end: transcript → evidence ──────────────────────────────────────
 
+/// Set on the copy a session-end hook hands its pass to, so the copy
+/// runs the pass instead of handing it on again.
+const DETACHED: &str = "STAW_SYNC_DETACHED";
+
 pub async fn sync(kind: Kind) -> Result<()> {
+    // A session end gets little time (Claude Code: 1.5 s) and the pass is
+    // a few round trips per 50 turns, so it runs in a copy of this binary
+    // that outlives the hook; nobody reads what a session end says. Not
+    // for opencode: its plugin runs one sync per session at a time and
+    // shows what the sync answers.
+    if kind != Kind::Opencode && std::env::var_os(DETACHED).is_none() {
+        detach();
+        return Ok(());
+    }
     let harness = kind.harness();
     // Best effort throughout: a sync problem must never surface as a
     // session failure. The quiet paths just return.
@@ -549,6 +561,37 @@ pub async fn sync(kind: Kind) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// Run this same hook again in its own process group, with the payload
+/// the harness gave us on its stdin, and return without waiting.
+fn detach() {
+    let mut payload = Vec::new();
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    if std::io::stdin().read_to_end(&mut payload).is_err() {
+        return;
+    }
+    let mut pass = Command::new(exe);
+    pass.args(std::env::args_os().skip(1))
+        .env(DETACHED, "1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        pass.process_group(0);
+    }
+    let Ok(mut child) = pass.spawn() else {
+        return;
+    };
+    // A few hundred bytes of JSON: the pipe takes it whole, and dropping
+    // the handle closes it, so the copy reads to its end.
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(&payload);
+    }
 }
 
 async fn try_sync(kind: Kind) -> Result<()> {
