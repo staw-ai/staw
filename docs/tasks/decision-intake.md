@@ -3,10 +3,17 @@
 Status: accepted by the user on 2026-11-16, decision
 `01M7K7770Y8SV2EDD2FZ3VE8C2`. On 2026-11-17 the user settled the choices
 that step 1 depends on (see "Settled by the user") and asked for step 1.
-Nothing in this document is built. It is the brief for an implementing
-agent, one step per run, in the order given under "Steps". It replaces the
-server-side plan of 2026-11-14 as the first step. That plan is kept in
-`decision-intake-server.md` for the work under "Later".
+Step 1 is built (`crates/staw-slack`, 2026-11-17) and tested against a
+stub Slack, a stub model and a real Staw; it was not checked in a real
+Slack workspace. Steps 2 to 5 are not built. Before step 2, ask the user:
+Staw's stateless `/mcp` does not carry the MCP client's name to a tool
+call, so a write through MCP is authored via the agent `mcp`, not
+`staw-slack` (see Authorship under "What exists"); step 2's "authored as
+the person via `staw-slack`" needs a server change. It is the brief for
+an implementing agent, one step per run, in the order given under
+"Steps". It replaces the server-side plan of 2026-11-14 as the first
+step. That plan is kept in `decision-intake-server.md` for the work under
+"Later".
 
 ## How to work from this document
 

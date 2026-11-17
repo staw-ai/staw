@@ -187,7 +187,11 @@ impl People {
     /// the refresh token is stored and the access token cached.
     pub async fn wait(&self, key: &Key, client_id: &str, client: &str, opened: &Opened) -> Outcome {
         let outcome = self.poll(key, client_id, client, opened).await;
-        self.pending.lock().await.remove(key);
+        // Only this grant: a newer one may have replaced it meanwhile.
+        let mut pending = self.pending.lock().await;
+        if pending.get(key).is_some_and(|p| p.code == opened.user_code) {
+            pending.remove(key);
+        }
         outcome
     }
 

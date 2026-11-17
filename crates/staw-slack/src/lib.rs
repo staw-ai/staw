@@ -9,7 +9,7 @@
 //! (decision `01M7K7770Y8SV2EDD2FZ3VE8C2`):
 //!
 //! - It reaches Slack through Socket Mode, an outbound WebSocket, so it
-//!   needs no public URL ([`socket`]), and the Web API ([`slack`]).
+//!   needs no public URL, and the Web API ([`slack`]).
 //! - It reaches Staw only through `/mcp`, the OAuth endpoints, and two
 //!   reads ([`staw`]) — always with the token of the person who asked
 //!   ([`people`]); there is no shared token.

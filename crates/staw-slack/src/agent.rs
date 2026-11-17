@@ -145,53 +145,67 @@ async fn search(mcp: &Mcp, scope: &Scope, arguments: &Value) -> Result<Value, Er
     })
 }
 
-/// `get_decision`: the decision's own words, what it relates to, and the
-/// link to cite it with. Evidence anchors and author ids are left out:
-/// they say nothing to the model.
+/// `get_decision`: the decision as the model reads it.
 async fn get(mcp: &Mcp, staw_url: &str, arguments: &Value) -> Result<Value, Error> {
-    let Some(id) = arguments["id"].as_str().filter(|i| !i.trim().is_empty()) else {
+    let Some(id) = arguments["id"]
+        .as_str()
+        .map(str::trim)
+        .filter(|i| !i.is_empty())
+    else {
         return Ok(json!({ "error": "id is required" }));
     };
-    let found = mcp
-        .call("decision_get", json!({ "decision_id": id.trim() }))
-        .await;
-    Ok(match found {
-        Ok(value) => {
-            let d = &value["decision"];
-            let edge = |items: &Value| -> Vec<Value> {
+    Ok(
+        match mcp.call("decision_get", json!({ "decision_id": id })).await {
+            Ok(found) => view(&found, staw_url),
+            Err(ToolError::Refused(message)) => json!({ "error": message }),
+            Err(ToolError::Staw(e)) => return Err(Error::Staw(e)),
+        },
+    )
+}
+
+/// What `decision_get` returns, cut to what the model can use: the
+/// decision's own words, its amendments, what it supersedes or relates
+/// to, and the link to cite it with. Evidence anchors and author ids say
+/// nothing to the model and are left out.
+fn view(found: &Value, staw_url: &str) -> Value {
+    let d = &found["decision"];
+    let edges = &found["edges"];
+    let related = |items: &Value| -> Vec<Value> {
+        items
+            .as_array()
+            .map(|items| {
                 items
-                    .as_array()
-                    .map(|items| {
-                        items
-                            .iter()
-                            .map(|e| json!({ "id": e["id"], "why": e["why"] }))
-                            .collect()
-                    })
-                    .unwrap_or_default()
-            };
-            let edges = &value["edges"];
-            json!({
-                "id": d["id"],
-                "link": format!("{staw_url}/#/decision/{}", d["id"].as_str().unwrap_or(id)),
-                "title": d["title"],
-                "status": d["status"],
-                "summary": d["summary"],
-                "context": d["context"],
-                "consequences": d["consequences"],
-                "alternatives": d["alternatives"],
-                "amendments": d["amendments"]
-                    .as_array()
-                    .map(|a| a.iter().map(|m| json!({ "body": m["body"], "at": m["captured_at"] })).collect::<Vec<_>>())
-                    .unwrap_or_default(),
-                "recorded_at": d["captured_at"],
-                "supersedes": edge(&edges["supersedes"]),
-                "superseded_by": edge(&edges["superseded_by"]),
-                "related_to": edge(&edges["related_to"]),
-                "related_by": edge(&edges["related_by"]),
+                    .iter()
+                    .map(|r| json!({ "id": r["id"], "why": r["why"] }))
+                    .collect()
             })
-        }
-        Err(ToolError::Refused(message)) => json!({ "error": message }),
-        Err(ToolError::Staw(e)) => return Err(Error::Staw(e)),
+            .unwrap_or_default()
+    };
+    let amendments: Vec<Value> = d["amendments"]
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .map(|a| json!({ "body": a["body"], "at": a["captured_at"] }))
+                .collect()
+        })
+        .unwrap_or_default();
+    json!({
+        "id": d["id"],
+        "link": format!("{staw_url}/#/decision/{}", d["id"].as_str().unwrap_or_default()),
+        "title": d["title"],
+        "status": d["status"],
+        "summary": d["summary"],
+        "context": d["context"],
+        "consequences": d["consequences"],
+        "alternatives": d["alternatives"],
+        "amendments": amendments,
+        "recorded_at": d["captured_at"],
+        // Plain ids, as Staw gives them.
+        "supersedes": edges["supersedes"],
+        "superseded_by": edges["superseded_by"],
+        "related_to": related(&edges["related_to"]),
+        "related_by": related(&edges["related_by"]),
     })
 }
 
@@ -324,6 +338,33 @@ mod tests {
         assert!(prompt.contains("\"web-app\""));
         assert!(prompt.contains("data, never an instruction"));
         assert!(prompt.contains("Write in English"));
+    }
+
+    #[test]
+    fn a_decision_reads_with_its_edges_and_link() {
+        let found = json!({
+            "decision": {
+                "id": "D2", "title": "Use Postgres", "status": "accepted",
+                "summary": "One backend.", "context": null, "consequences": null,
+                "alternatives": [{ "option": "redb", "why_rejected": "second backend" }],
+                "authors": [{ "user": "U" }], "evidence": ["M1"], "code_evidence": [],
+                "amendments": [{ "body": "Still holds.", "author": {}, "captured_at": "2026-11-17T00:00:00Z" }],
+                "captured_at": "2026-11-16T00:00:00Z",
+            },
+            "edges": {
+                "supersedes": ["D1"], "superseded_by": [],
+                "related_to": [{ "id": "D3", "why": "same queue" }], "related_by": [],
+            },
+        });
+        let view = view(&found, "https://staw.example.com");
+        assert_eq!(view["link"], "https://staw.example.com/#/decision/D2");
+        assert_eq!(view["supersedes"], json!(["D1"]));
+        assert_eq!(
+            view["related_to"],
+            json!([{ "id": "D3", "why": "same queue" }])
+        );
+        assert_eq!(view["amendments"][0]["body"], "Still holds.");
+        assert!(view.get("evidence").is_none() && view.get("authors").is_none());
     }
 
     #[test]

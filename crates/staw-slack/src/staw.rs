@@ -55,10 +55,14 @@ pub struct Oauth {
     token: String,
 }
 
-/// Staw: its base URL and an HTTP client.
+/// Staw: its base URL and HTTP clients.
 #[derive(Clone)]
 pub struct Staw {
     http: reqwest::Client,
+    /// For `/mcp`: without idle pooling, as rmcp's own default client —
+    /// reusing a connection whose last body was not read to the end
+    /// stalls on delayed ACKs.
+    mcp: reqwest::Client,
     base: String,
 }
 
@@ -147,6 +151,11 @@ impl Staw {
         Self {
             http: reqwest::Client::builder()
                 .timeout(HTTP_TIMEOUT)
+                .build()
+                .expect("a reqwest client with a timeout builds"),
+            mcp: reqwest::Client::builder()
+                .timeout(HTTP_TIMEOUT)
+                .pool_max_idle_per_host(0)
                 .build()
                 .expect("a reqwest client with a timeout builds"),
             base: base.trim_end_matches('/').to_string(),
@@ -343,7 +352,7 @@ impl Staw {
     /// follow, each a POST with the same bearer.
     pub async fn mcp(&self, access: &str) -> Result<Mcp, Error> {
         let transport = StreamableHttpClientTransport::with_client(
-            self.http.clone(),
+            self.mcp.clone(),
             StreamableHttpClientTransportConfig::with_uri(format!("{}/mcp", self.base))
                 .auth_header(access),
         );
