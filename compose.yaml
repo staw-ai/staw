@@ -35,5 +35,34 @@ services:
       postgres:
         condition: service_healthy
 
+  # The Slack bot (crates/staw-slack), from the same image. Off unless
+  # its profile is asked for: `docker compose --profile slack up --build`.
+  # It reads ./staw-slack.toml (the README's "Slack bot" section has one);
+  # without that file compose refuses to start it.
+  staw-slack:
+    build: .
+    profiles: ["slack"]
+    entrypoint: ["staw-slack"]
+    environment:
+      STAW_SLACK_CONFIG: /etc/staw/slack.toml
+    volumes:
+      - type: bind
+        source: ./staw-slack.toml
+        target: /etc/staw/slack.toml
+        read_only: true
+        bind:
+          create_host_path: false
+      # People's Staw refresh tokens: [store] path in the file above
+      # must point inside it.
+      - slack-tokens:/var/lib/staw-slack
+    # Staw's /mcp answers only to its own host names (rmcp's DNS-
+    # rebinding guard), so the bot shares the staw container's network
+    # and reaches it at http://127.0.0.1:8080 — the address a browser on
+    # this host uses for the links the bot sends, too.
+    network_mode: "service:staw"
+    depends_on:
+      - staw
+
 volumes:
   pgdata:
+  slack-tokens:

@@ -1,0 +1,50 @@
+# The Slack app for staw-slack: an internal app of your own workspace
+# (Staw decision 01M7E17NQ0R88VMQRQKV9SNZVW — distribution to other
+# workspaces waits for a Slack Marketplace decision).
+#
+# Create it at https://api.slack.com/apps → Create New App → From a
+# manifest, and paste this file. Then generate an app-level token with
+# `connections:write` and install the app; the README's "Slack bot"
+# section has the steps. Checked against Slack's manifest reference
+# (docs.slack.dev/reference/app-manifest) on 2026-11-17.
+display_information:
+  name: Staw
+  description: Answers questions about your team's decisions from Staw, in a direct message.
+  background_color: "#1d1c1d"
+features:
+  app_home:
+    # The Home tab shows whom you are connected as, and Disconnect.
+    home_tab_enabled: true
+    # Answers arrive in the Messages tab. The bot reads nothing typed
+    # there, so typing is off.
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: true
+  bot_user:
+    display_name: Staw
+    always_online: true
+oauth_config:
+  scopes:
+    bot:
+      # The mention that is a request.
+      - app_mentions:read
+      # conversations.replies: the thread, in public and private channels.
+      - channels:history
+      - groups:history
+      # Direct messages to the person who asked.
+      - chat:write
+      # The reaction that acknowledges a request in the thread.
+      - reactions:write
+      # users.info: the names of the people in a thread.
+      - users:read
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+      - app_home_opened
+  # The Disconnect button on the App Home.
+  interactivity:
+    is_enabled: true
+  org_deploy_enabled: false
+  # The bot connects out to Slack; it needs no public URL.
+  socket_mode_enabled: true
+  token_rotation_enabled: false
