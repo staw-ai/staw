@@ -81,3 +81,22 @@ fn the_manifest_asks_for_what_the_bot_uses() {
         "{manifest}"
     );
 }
+
+/// The configuration file the README shows is one the bot accepts.
+#[test]
+fn the_readme_configuration_is_valid() {
+    let readme =
+        std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../README.md"))
+            .unwrap();
+    let section = &readme[readme.find("## Slack bot").expect("a Slack bot section")..];
+    let start = section.find("```toml").expect("a TOML example") + "```toml".len();
+    let end = start + section[start..].find("```").unwrap();
+    let toml: String = section[start..end]
+        .lines()
+        .map(str::trim_start)
+        .collect::<Vec<_>>()
+        .join("\n");
+    let config = staw_slack::config::parse(&toml).unwrap_or_else(|e| panic!("{e}\n{toml}"));
+    assert_eq!(config.staw.url, "http://127.0.0.1:8080");
+    assert_eq!(config.channels.len(), 1);
+}
