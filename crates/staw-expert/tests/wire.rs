@@ -185,3 +185,76 @@ async fn the_budget_is_a_hard_bound() {
         "the call must return at the budget, not at the server's leisure"
     );
 }
+
+/// A caller-held tool loop: the round carries the tools and the choice,
+/// and a tool call comes back parsed, ready to run and answer.
+#[tokio::test]
+async fn a_tool_round_carries_tools_and_returns_calls() {
+    use genai::chat::{ChatMessage, ChatRequest, Tool, ToolChoice};
+
+    let seen: Shared = Shared::default();
+    let app = Router::new()
+        .route(
+            "/v1/chat/completions",
+            post(|State(seen): State<Shared>, body: String| async move {
+                seen.lock().await.body = serde_json::from_str(&body).ok();
+                axum::Json(json!({
+                    "id": "cmpl-1",
+                    "object": "chat.completion",
+                    "created": 0,
+                    "model": "m",
+                    "choices": [{
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": null,
+                            "tool_calls": [{
+                                "id": "call-1",
+                                "type": "function",
+                                "function": {
+                                    "name": "search",
+                                    "arguments": "{\"query\":\"queue\"}",
+                                },
+                            }],
+                        },
+                        "finish_reason": "tool_calls",
+                    }],
+                    "usage": { "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2 },
+                }))
+            }),
+        )
+        .with_state(Arc::clone(&seen));
+    let addr = serve(app).await;
+
+    let client = endpoint(json!({
+        "provider": "openai",
+        "model": "m",
+        "base_url": format!("http://{addr}/v1/"),
+    }))
+    .client()
+    .unwrap();
+
+    let request = ChatRequest::new(vec![
+        ChatMessage::system("use the tools"),
+        ChatMessage::user("what about the queue?"),
+    ])
+    .with_tools([Tool::new("search").with_schema(json!({
+        "type": "object",
+        "properties": { "query": { "type": "string" } },
+        "required": ["query"],
+    }))]);
+    let response = client
+        .tool_round(request, Some(ToolChoice::Required))
+        .await
+        .unwrap();
+    let calls = response.into_tool_calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].call_id, "call-1");
+    assert_eq!(calls[0].fn_name, "search");
+    assert_eq!(calls[0].fn_arguments, json!({ "query": "queue" }));
+
+    let seen = seen.lock().await;
+    let body = seen.body.as_ref().unwrap();
+    assert_eq!(body["tools"][0]["function"]["name"], "search");
+    assert_eq!(body["tool_choice"], "required");
+}

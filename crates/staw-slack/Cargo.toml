@@ -1,0 +1,46 @@
+[package]
+name = "staw-slack"
+description = "The Staw Slack bot: answers questions from Slack threads with what the asking person can see in Staw, through /mcp."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+staw-expert.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+config.workspace = true
+futures.workspace = true
+# The model's tool loop: the provider protocol is genai's, the provider
+# pinning is staw-expert's.
+genai.workspace = true
+reqwest.workspace = true
+# Staw is reached only through /mcp (plus the OAuth endpoints and two
+# REST reads), as an MCP client.
+rmcp = { workspace = true, features = [
+    "client",
+    "transport-streamable-http-client-reqwest",
+] }
+# Socket Mode's TLS: the connector is built here with an explicit crypto
+# provider. The workspace compiles rustls with both providers (reqwest
+# brings aws-lc-rs, sqlx brings ring), and with both present rustls has
+# no process default, so tungstenite's own `ClientConfig::builder()`
+# would panic.
+rustls = "0.23"
+rustls-native-certs = "0.8"
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+staw-server.workspace = true
+staw-storage.workspace = true
+staw-storage-postgres.workspace = true
+testcontainers-modules.workspace = true

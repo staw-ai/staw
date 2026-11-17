@@ -6,6 +6,7 @@ members = [
     "crates/staw-expert",
     "crates/staw-e2e",
     "crates/staw-server",
+    "crates/staw-slack",
     "crates/staw-storage",
     "crates/staw-storage-postgres",
     "crates/staw-ui",
@@ -22,6 +23,7 @@ default-members = [
     "crates/staw-client",
     "crates/staw-expert",
     "crates/staw-server",
+    "crates/staw-slack",
     "crates/staw-storage",
     "crates/staw-storage-postgres",
 ]

@@ -19,9 +19,10 @@
 //! at the E2 rung, the tool-calling encodings); this crate owns what
 //! genai must not: routing, credential resolution, and the budget. The
 //! surface is deliberately small: one-shot (`reply`/`extract`) for the
-//! enrichment jobs, and a streaming transcript exchange (`converse`)
-//! for the grounded chat — still no tools and no server-held
-//! conversation state (tools are E2's). Every call carries the
+//! enrichment jobs, a streaming transcript exchange (`converse`) for
+//! the grounded chat, and one round of a tool loop (`tool_round`) for a
+//! caller that holds the loop itself — the Slack bot. Still no
+//! server-held conversation state. Every call carries the
 //! endpoint's hard timeout (streams treat it as start + idle guard),
 //! and errors are values, never panics: expert work must leave its
 //! callers fail-open.
@@ -34,7 +35,8 @@ use std::time::Duration;
 use futures::Stream;
 use genai::adapter::AdapterKind;
 use genai::chat::{
-    ChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ChatStreamEvent, JsonSpec,
+    ChatMessage, ChatOptions, ChatRequest, ChatResponse, ChatResponseFormat, ChatStreamEvent,
+    JsonSpec, ToolChoice,
 };
 use genai::resolver::{AuthData, ServiceTargetResolver};
 use genai::{ModelIden, ServiceTarget};
@@ -201,6 +203,30 @@ impl Client {
             .ok_or_else(|| Error::Shape("no text in the reply".into()))?;
         serde_json::from_str(text)
             .map_err(|e| Error::Shape(format!("the reply is not the requested JSON: {e}")))
+    }
+
+    /// One round of a tool loop that the caller holds: `request` carries
+    /// the conversation so far and the tool definitions, `choice` says
+    /// whether the model may, must, or must not call one. The reply comes
+    /// back whole — text, tool calls, or both — for the caller to run the
+    /// calls and append their results. Bounded by the endpoint's timeout,
+    /// like every other call; the loop's own budget is the caller's.
+    pub async fn tool_round(
+        &self,
+        request: ChatRequest,
+        choice: Option<ToolChoice>,
+    ) -> Result<ChatResponse, Error> {
+        let options = match choice {
+            Some(choice) => self.options.clone().with_tool_choice(choice),
+            None => self.options.clone(),
+        };
+        let response = tokio::time::timeout(
+            self.timeout,
+            self.genai.exec_chat(&self.model, request, Some(&options)),
+        )
+        .await
+        .map_err(|_| Error::Timeout(self.timeout))??;
+        Ok(response)
     }
 
     /// "provider model @ origin" — for logs and `expert check` output.
